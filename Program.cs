@@ -18,20 +18,20 @@ var awsSecretKey = Environment.GetEnvironmentVariable("AWS_SECRET_ACCESS_KEY")!;
 var awsBucketName = Environment.GetEnvironmentVariable("AWS_BUCKET_NAME")!;
 var awsEndpointUrl = Environment.GetEnvironmentVariable("AWS_ENDPOINT_URL")!;
 
-using var ftp = new FtpClient();
+var ftp = new FtpClient();
 ftp.Host = ftpHost;
 ftp.Port = ftpPort;
 ftp.Credentials = new NetworkCredential(ftpUsername, ftpPassword);
 ftp.Connect();
 
-using var s3 = new AmazonS3Client(
+var s3 = new AmazonS3Client(
     new BasicAWSCredentials(awsAccessKey, awsSecretKey),
     new AmazonS3Config
     {
         ServiceURL = awsEndpointUrl
     });
 
-var replays = ftp.GetListing("/replays");
+var replays = ftp.GetListing("replays");
 Console.WriteLine($"Got {replays.Length} replays from FTP");
 
 await Parallel.ForEachAsync(replays, async (x, cancellationToken) =>
@@ -86,6 +86,9 @@ await Parallel.ForEachAsync(replays, async (x, cancellationToken) =>
     catch (Exception)
     {
         Console.WriteLine($"Failed to save replay: {x.Name}");
+        ftp.Disconnect();
         throw;
     }
 });
+
+ftp.Disconnect();

@@ -5,6 +5,8 @@ using Amazon.S3.Model;
 using FluentFTP;
 using MoveAkatsukiReplays;
 
+Console.WriteLine("hi");
+
 DotEnv.Load(Path.Combine(Directory.GetCurrentDirectory(), ".env"));
 
 var ftpHost = Environment.GetEnvironmentVariable("FTP_HOST")!;
@@ -29,7 +31,10 @@ using var s3 = new AmazonS3Client(
         ServiceURL = awsEndpointUrl
     });
 
-await Parallel.ForEachAsync(ftp.GetListing("/replays"), async (x, cancellationToken) =>
+var replays = ftp.GetListing("/replays");
+Console.WriteLine($"Got {replays.Length} replays from FTP");
+
+await Parallel.ForEachAsync(replays, async (x, cancellationToken) =>
 {
     var getRequest = new GetObjectRequest
     {

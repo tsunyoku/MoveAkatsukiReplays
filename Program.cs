@@ -5,7 +5,7 @@ using Amazon.S3.Model;
 using FluentFTP;
 using MoveAkatsukiReplays;
 
-Console.WriteLine("hi");
+Console.WriteLine($"hi: {Path.Combine(Directory.GetCurrentDirectory(), ".env")}");
 
 DotEnv.Load(Path.Combine(Directory.GetCurrentDirectory(), ".env"));
 
@@ -18,11 +18,8 @@ var awsSecretKey = Environment.GetEnvironmentVariable("AWS_SECRET_ACCESS_KEY")!;
 var awsBucketName = Environment.GetEnvironmentVariable("AWS_BUCKET_NAME")!;
 var awsEndpointUrl = Environment.GetEnvironmentVariable("AWS_ENDPOINT_URL")!;
 
-var ftp = new FtpClient();
-ftp.Host = ftpHost;
-ftp.Port = ftpPort;
-ftp.Credentials = new NetworkCredential(ftpUsername, ftpPassword);
-ftp.Connect();
+var ftp = new AsyncFtpClient(ftpHost, ftpUsername, ftpPassword, ftpPort);
+await ftp.AutoConnect();
 
 var s3 = new AmazonS3Client(
     new BasicAWSCredentials(awsAccessKey, awsSecretKey),
@@ -31,11 +28,24 @@ var s3 = new AmazonS3Client(
         ServiceURL = awsEndpointUrl
     });
 
-var replays = ftp.GetListing("replays");
+var replays = await ftp.GetListing("/replays");
 Console.WriteLine($"Got {replays.Length} replays from FTP");
 
 await Parallel.ForEachAsync(replays, async (x, cancellationToken) =>
 {
+    if (x.Type != FtpObjectType.File)
+    {
+        // not a file, skip
+        return;
+    }
+    
+    
+    if (!x.Name.EndsWith(".osr"))
+    {
+        // not a replay file, skip
+        return;
+    }
+
     var getRequest = new GetObjectRequest
     {
         BucketName = awsBucketName,
@@ -57,14 +67,8 @@ await Parallel.ForEachAsync(replays, async (x, cancellationToken) =>
         // doesn't exist, ignore
     }
 
-    if (!x.Name.EndsWith(".osr"))
-    {
-        // not a replay file, skip
-        return;
-    }
-
     using var fileStream = new MemoryStream();
-    ftp.DownloadStream(fileStream, x.Name);
+    await ftp.DownloadStream(fileStream, x.Name);
     
     var putRequest = new PutObjectRequest
     {
@@ -86,9 +90,9 @@ await Parallel.ForEachAsync(replays, async (x, cancellationToken) =>
     catch (Exception)
     {
         Console.WriteLine($"Failed to save replay: {x.Name}");
-        ftp.Disconnect();
+        await ftp.Disconnect(cancellationToken);
         throw;
     }
 });
 
-ftp.Disconnect();
+await ftp.Disconnect();

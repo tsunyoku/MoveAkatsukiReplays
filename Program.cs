@@ -5,8 +5,6 @@ using Amazon.S3.Model;
 using FluentFTP;
 using MoveAkatsukiReplays;
 
-Console.WriteLine($"hi: {Path.Combine(Directory.GetCurrentDirectory(), ".env")}");
-
 DotEnv.Load(Path.Combine(Directory.GetCurrentDirectory(), ".env"));
 
 var ftpHost = Environment.GetEnvironmentVariable("FTP_HOST")!;

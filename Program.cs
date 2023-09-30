@@ -26,7 +26,7 @@ var s3 = new AmazonS3Client(
         ServiceURL = awsEndpointUrl
     });
 
-var replays = await ftp.GetListing("/replays");
+var replays = await ftp.GetListing("replays", FtpListOption.UseLS);
 Console.WriteLine($"Got {replays.Length} replays from FTP");
 
 await Parallel.ForEachAsync(replays, async (x, cancellationToken) =>

@@ -93,7 +93,6 @@ async Task Run()
         catch (Exception)
         {
             Console.WriteLine($"Failed to save replay: {x.Name}");
-            await ftp.Disconnect(cancellationToken);
             throw;
         }
     });

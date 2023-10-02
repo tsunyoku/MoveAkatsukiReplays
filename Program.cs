@@ -29,6 +29,10 @@ async Task Run()
 {
     var replays = await ftp.GetListing("replays");
     Console.WriteLine($"Got {replays.Length} replays from FTP");
+    if (replays.Length == 0)
+    {
+        return;
+    }
 
     await Parallel.ForEachAsync(replays, async (x, cancellationToken) =>
     {

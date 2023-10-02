@@ -97,8 +97,6 @@ async Task Run()
             throw;
         }
     });
-
-    await ftp.Disconnect();
 }
 
 try

@@ -17,7 +17,6 @@ var awsBucketName = Environment.GetEnvironmentVariable("AWS_BUCKET_NAME")!;
 var awsEndpointUrl = Environment.GetEnvironmentVariable("AWS_ENDPOINT_URL")!;
 
 var ftp = new AsyncFtpClient(ftpHost, ftpUsername, ftpPassword, ftpPort);
-await ftp.AutoConnect();
 
 var s3 = new AmazonS3Client(
     new BasicAWSCredentials(awsAccessKey, awsSecretKey),
@@ -26,71 +25,84 @@ var s3 = new AmazonS3Client(
         ServiceURL = awsEndpointUrl
     });
 
-var replays = await ftp.GetListing("replays", FtpListOption.UseLS);
-Console.WriteLine($"Got {replays.Length} replays from FTP");
-
-await Parallel.ForEachAsync(replays, async (x, cancellationToken) =>
+async Task Run()
 {
-    if (x.Type != FtpObjectType.File)
-    {
-        // not a file, skip
-        return;
-    }
-    
-    
-    if (!x.Name.EndsWith(".osr"))
-    {
-        // not a replay file, skip
-        return;
-    }
+    var replays = await ftp.GetListing("replays", FtpListOption.UseLS);
+    Console.WriteLine($"Got {replays.Length} replays from FTP");
 
-    var getRequest = new GetObjectRequest
+    await Parallel.ForEachAsync(replays, async (x, cancellationToken) =>
     {
-        BucketName = awsBucketName,
-        Key = $"replays/{x.Name}"
-    };
-
-    try
-    {
-        var getResponse = await s3.GetObjectAsync(getRequest, cancellationToken);
-
-        if (getResponse.HttpStatusCode == HttpStatusCode.OK)
+        if (x.Type != FtpObjectType.File)
         {
-            // already exists on s3, fuck off
+            // not a file, skip
             return;
         }
-    }
-    catch (AmazonS3Exception)
-    {
-        // doesn't exist, ignore
-    }
-
-    using var fileStream = new MemoryStream();
-    await ftp.DownloadStream(fileStream, x.Name);
-    
-    var putRequest = new PutObjectRequest
-    {
-        BucketName = awsBucketName,
-        Key = $"replays/{x.Name}",
-        InputStream = fileStream,
-    };
-
-    try
-    {
-        var putResponse = await s3.PutObjectAsync(putRequest, cancellationToken);
-        if (putResponse?.HttpStatusCode != HttpStatusCode.OK)
-        {
-            throw new Exception($"Failed to save replay {x.Name}, status code: {putResponse?.HttpStatusCode}");
-        }
         
-        Console.WriteLine($"Saved replay {x.Name}");
-    }
-    catch (Exception)
-    {
-        Console.WriteLine($"Failed to save replay: {x.Name}");
-        await ftp.Disconnect(cancellationToken);
-        throw;
-    }
-});
+        
+        if (!x.Name.EndsWith(".osr"))
+        {
+            // not a replay file, skip
+            return;
+        }
 
-await ftp.Disconnect();
+        var getRequest = new GetObjectRequest
+        {
+            BucketName = awsBucketName,
+            Key = $"replays/{x.Name}"
+        };
+
+        try
+        {
+            var getResponse = await s3.GetObjectAsync(getRequest, cancellationToken);
+
+            if (getResponse.HttpStatusCode == HttpStatusCode.OK)
+            {
+                // already exists on s3, fuck off
+                return;
+            }
+        }
+        catch (AmazonS3Exception)
+        {
+            // doesn't exist, ignore
+        }
+
+        using var fileStream = new MemoryStream();
+        await ftp.DownloadStream(fileStream, x.Name);
+        
+        var putRequest = new PutObjectRequest
+        {
+            BucketName = awsBucketName,
+            Key = $"replays/{x.Name}",
+            InputStream = fileStream,
+        };
+
+        try
+        {
+            var putResponse = await s3.PutObjectAsync(putRequest, cancellationToken);
+            if (putResponse?.HttpStatusCode != HttpStatusCode.OK)
+            {
+                throw new Exception($"Failed to save replay {x.Name}, status code: {putResponse?.HttpStatusCode}");
+            }
+            
+            Console.WriteLine($"Saved replay {x.Name}");
+        }
+        catch (Exception)
+        {
+            Console.WriteLine($"Failed to save replay: {x.Name}");
+            await ftp.Disconnect(cancellationToken);
+            throw;
+        }
+    });
+
+    await ftp.Disconnect();
+}
+
+try
+{
+    await ftp.AutoConnect();
+    await Run();
+}
+catch (Exception)
+{
+    await ftp.Disconnect();
+}

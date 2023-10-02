@@ -109,5 +109,8 @@ try
 catch (Exception ex)
 {
     Console.WriteLine(ex);
+}
+finally
+{
     await ftp.Disconnect();
 }

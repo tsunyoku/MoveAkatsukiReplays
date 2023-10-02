@@ -102,7 +102,8 @@ try
     await ftp.AutoConnect();
     await Run();
 }
-catch (Exception)
+catch (Exception ex)
 {
+    Console.WriteLine(ex);
     await ftp.Disconnect();
 }

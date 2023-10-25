@@ -16,7 +16,14 @@ var awsSecretKey = Environment.GetEnvironmentVariable("AWS_SECRET_ACCESS_KEY")!;
 var awsBucketName = Environment.GetEnvironmentVariable("AWS_BUCKET_NAME")!;
 var awsEndpointUrl = Environment.GetEnvironmentVariable("AWS_ENDPOINT_URL")!;
 
-var ftp = new AsyncFtpClient(ftpHost, ftpUsername, ftpPassword, ftpPort);
+var ftpConfig = new FtpConfig
+{
+    ReadTimeout = int.MaxValue,
+    ConnectTimeout = int.MaxValue,
+    DataConnectionConnectTimeout = int.MaxValue,
+    DataConnectionReadTimeout = int.MaxValue
+};
+var ftp = new AsyncFtpClient(ftpHost, ftpUsername, ftpPassword, ftpPort, ftpConfig);
 
 var s3 = new AmazonS3Client(
     new BasicAWSCredentials(awsAccessKey, awsSecretKey),
@@ -98,8 +105,18 @@ async Task Run()
     });
 }
 
+async Task Cleanup()
+{
+    await ftp.Disconnect();
+}
+
 try
 {
+    Console.CancelKeyPress += async (sender, eventArgs) =>
+    {
+        await Cleanup();
+    };
+
     await ftp.AutoConnect();
     await Run();
 }
@@ -109,5 +126,5 @@ catch (Exception ex)
 }
 finally
 {
-    await ftp.Disconnect();
+    await Cleanup();
 }

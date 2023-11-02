@@ -51,7 +51,7 @@ async Task Run()
     {
         while (true)
         {
-            var scoreIds = (await db.QueryAsync<int>($"SELECT id FROM {table} WHERE {table}.time < {s3SwitchConstant} ORDER BY {table}.time DESC LIMIT {fetchConstant} OFFSET {offset}")).ToArray();
+            var scoreIds = (await db.QueryAsync<int>($"SELECT id FROM {table} WHERE {table}.time < {s3SwitchConstant} AND {table}.completed IN (2, 3) ORDER BY {table}.time DESC LIMIT {fetchConstant} OFFSET {offset}")).ToArray();
             offset += scoreIds.Length;
             
             foreach (var scoreId in scoreIds)

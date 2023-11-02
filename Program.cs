@@ -56,11 +56,12 @@ async Task Run()
             
             foreach (var scoreId in scoreIds)
             {
-                var replayFileName = $"replays/replay_{scoreId}.osr";
+                var ftpFileName = $"replays/replay_{scoreId}.osr";
+                var s3FileName = $"replays/{scoreId}.osr";
                 var getRequest = new GetObjectRequest
                 {
                     BucketName = awsBucketName,
-                    Key = replayFileName,
+                    Key = s3FileName,
                 };
         
                 try
@@ -69,7 +70,7 @@ async Task Run()
         
                     if (getResponse.HttpStatusCode == HttpStatusCode.OK)
                     {
-                        Console.WriteLine($"Replay {replayFileName} already exists on S3");
+                        Console.WriteLine($"Replay {s3FileName} already exists on S3");
                         continue;
                     }
                 }
@@ -82,18 +83,18 @@ async Task Run()
                 try
                 {
                     fileStream = new MemoryStream();
-                    await ftp.DownloadStream(fileStream, replayFileName);
+                    await ftp.DownloadStream(fileStream, ftpFileName);
                 }
                 catch (Exception)
                 {
-                    Console.WriteLine($"Replay {replayFileName} doesn't exist in FTP");
+                    Console.WriteLine($"Replay {ftpFileName} doesn't exist in FTP");
                     continue;
                 }
                 
                 var putRequest = new PutObjectRequest
                 {
                     BucketName = awsBucketName,
-                    Key = replayFileName,
+                    Key = s3FileName,
                     InputStream = fileStream,
                 };
         
@@ -102,14 +103,14 @@ async Task Run()
                     var putResponse = await s3.PutObjectAsync(putRequest);
                     if (putResponse?.HttpStatusCode != HttpStatusCode.OK)
                     {
-                        throw new Exception($"Failed to save replay {replayFileName}, status code: {putResponse?.HttpStatusCode}");
+                        throw new Exception($"Failed to save replay {s3FileName}, status code: {putResponse?.HttpStatusCode}");
                     }
                     
-                    Console.WriteLine($"Saved replay {replayFileName}");
+                    Console.WriteLine($"Saved replay {s3FileName}");
                 }
                 catch (Exception)
                 {
-                    Console.WriteLine($"Failed to save replay: {replayFileName}");
+                    Console.WriteLine($"Failed to save replay: {s3FileName}");
                 }
                 
                 fileStream.Dispose();

@@ -2,8 +2,10 @@
 using Amazon.Runtime;
 using Amazon.S3;
 using Amazon.S3.Model;
+using Dapper;
 using FluentFTP;
 using MoveAkatsukiReplays;
+using MySqlConnector;
 
 DotEnv.Load(Path.Combine(Directory.GetCurrentDirectory(), ".env"));
 
@@ -15,6 +17,9 @@ var awsAccessKey  = Environment.GetEnvironmentVariable("AWS_ACCESS_KEY_ID")!;
 var awsSecretKey = Environment.GetEnvironmentVariable("AWS_SECRET_ACCESS_KEY")!;
 var awsBucketName = Environment.GetEnvironmentVariable("AWS_BUCKET_NAME")!;
 var awsEndpointUrl = Environment.GetEnvironmentVariable("AWS_ENDPOINT_URL")!;
+var databaseConnectionString = Environment.GetEnvironmentVariable("DATABASE_CONNECTION_STRING")!;
+
+var db = new MySqlConnection(databaseConnectionString);
 
 var ftpConfig = new FtpConfig
 {
@@ -34,32 +39,19 @@ var s3 = new AmazonS3Client(
 
 async Task Run()
 {
-    var replays = await ftp.GetListing("replays", FtpListOption.UseStat);
-    Console.WriteLine($"Got {replays.Length} replays from FTP");
-    if (replays.Length == 0)
+    IEnumerable<string> replays = new List<string>();
+    foreach (var table in new[] { "scores", "scores_relax", "scores_ap" })
     {
-        return;
+        var scores = await db.QueryAsync<int>($"SELECT id FROM {table}");
+        replays = replays.Union(scores.Select(x => $"replays/replay_{x}.osr"));
     }
 
     await Parallel.ForEachAsync(replays, async (x, cancellationToken) =>
     {
-        if (x.Type != FtpObjectType.File)
-        {
-            // not a file, skip
-            return;
-        }
-        
-        
-        if (!x.Name.EndsWith(".osr"))
-        {
-            // not a replay file, skip
-            return;
-        }
-
         var getRequest = new GetObjectRequest
         {
             BucketName = awsBucketName,
-            Key = $"replays/{x.Name}"
+            Key = x,
         };
 
         try
@@ -78,12 +70,12 @@ async Task Run()
         }
 
         using var fileStream = new MemoryStream();
-        await ftp.DownloadStream(fileStream, x.Name);
+        await ftp.DownloadStream(fileStream, x);
         
         var putRequest = new PutObjectRequest
         {
             BucketName = awsBucketName,
-            Key = $"replays/{x.Name}",
+            Key = x,
             InputStream = fileStream,
         };
 
@@ -92,14 +84,14 @@ async Task Run()
             var putResponse = await s3.PutObjectAsync(putRequest, cancellationToken);
             if (putResponse?.HttpStatusCode != HttpStatusCode.OK)
             {
-                throw new Exception($"Failed to save replay {x.Name}, status code: {putResponse?.HttpStatusCode}");
+                throw new Exception($"Failed to save replay x, status code: {putResponse?.HttpStatusCode}");
             }
             
-            Console.WriteLine($"Saved replay {x.Name}");
+            Console.WriteLine($"Saved replay {x}");
         }
         catch (Exception)
         {
-            Console.WriteLine($"Failed to save replay: {x.Name}");
+            Console.WriteLine($"Failed to save replay: {x}");
             throw;
         }
     });
@@ -108,6 +100,7 @@ async Task Run()
 async Task Cleanup()
 {
     await ftp.Disconnect();
+    await db.CloseAsync();
 }
 
 try
@@ -118,6 +111,7 @@ try
     };
 
     await ftp.AutoConnect();
+    await db.OpenAsync();
     await Run();
 }
 catch (Exception ex)

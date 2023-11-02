@@ -69,17 +69,26 @@ async Task Run()
         
                     if (getResponse.HttpStatusCode == HttpStatusCode.OK)
                     {
-                        // already exists on s3, fuck off
-                        return;
+                        Console.WriteLine($"Replay {replayFileName} already exists on S3");
+                        continue;
                     }
                 }
                 catch (AmazonS3Exception)
                 {
                     // doesn't exist, ignore
                 }
-        
-                using var fileStream = new MemoryStream();
-                await ftp.DownloadStream(fileStream, replayFileName);
+
+                MemoryStream fileStream;
+                try
+                {
+                    fileStream = new MemoryStream();
+                    await ftp.DownloadStream(fileStream, replayFileName);
+                }
+                catch (Exception)
+                {
+                    Console.WriteLine($"Replay {replayFileName} doesn't exist in FTP");
+                    continue;
+                }
                 
                 var putRequest = new PutObjectRequest
                 {
@@ -93,7 +102,7 @@ async Task Run()
                     var putResponse = await s3.PutObjectAsync(putRequest);
                     if (putResponse?.HttpStatusCode != HttpStatusCode.OK)
                     {
-                        throw new Exception($"Failed to save replay x, status code: {putResponse?.HttpStatusCode}");
+                        throw new Exception($"Failed to save replay {replayFileName}, status code: {putResponse?.HttpStatusCode}");
                     }
                     
                     Console.WriteLine($"Saved replay {replayFileName}");
@@ -101,12 +110,14 @@ async Task Run()
                 catch (Exception)
                 {
                     Console.WriteLine($"Failed to save replay: {replayFileName}");
-                    throw;
                 }
+                
+                fileStream.Dispose();
             }
     
             if (scoreIds.Length < fetchConstant)
             {
+                Console.WriteLine("Done");
                 break;
             }
         }

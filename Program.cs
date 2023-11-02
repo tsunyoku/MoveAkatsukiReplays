@@ -37,64 +37,80 @@ var s3 = new AmazonS3Client(
         ServiceURL = awsEndpointUrl
     });
 
+// 1st July 2022 (we switched to s3 roughly end of june)
+const int s3SwitchConstant = 1656630000;
+
+// fetch 1000 scores at a time
+const int fetchConstant = 1000;
+
 async Task Run()
 {
-    IEnumerable<string> replays = new List<string>();
+    var offset = 0;
+
     foreach (var table in new[] { "scores", "scores_relax", "scores_ap" })
     {
-        var scores = await db.QueryAsync<int>($"SELECT id FROM {table}");
-        replays = replays.Union(scores.Select(x => $"replays/replay_{x}.osr"));
-    }
-
-    await Parallel.ForEachAsync(replays, async (x, cancellationToken) =>
-    {
-        var getRequest = new GetObjectRequest
+        while (true)
         {
-            BucketName = awsBucketName,
-            Key = x,
-        };
-
-        try
-        {
-            var getResponse = await s3.GetObjectAsync(getRequest, cancellationToken);
-
-            if (getResponse.HttpStatusCode == HttpStatusCode.OK)
-            {
-                // already exists on s3, fuck off
-                return;
-            }
-        }
-        catch (AmazonS3Exception)
-        {
-            // doesn't exist, ignore
-        }
-
-        using var fileStream = new MemoryStream();
-        await ftp.DownloadStream(fileStream, x);
-        
-        var putRequest = new PutObjectRequest
-        {
-            BucketName = awsBucketName,
-            Key = x,
-            InputStream = fileStream,
-        };
-
-        try
-        {
-            var putResponse = await s3.PutObjectAsync(putRequest, cancellationToken);
-            if (putResponse?.HttpStatusCode != HttpStatusCode.OK)
-            {
-                throw new Exception($"Failed to save replay x, status code: {putResponse?.HttpStatusCode}");
-            }
+            var scoreIds = (await db.QueryAsync<int>($"SELECT id FROM {table} WHERE {table}.time < {s3SwitchConstant} ORDER BY {table}.time DESC LIMIT {fetchConstant} OFFSET {offset}")).ToArray();
+            offset += scoreIds.Length;
             
-            Console.WriteLine($"Saved replay {x}");
+            foreach (var scoreId in scoreIds)
+            {
+                var replayFileName = $"replays/replay_{scoreId}.osr";
+                var getRequest = new GetObjectRequest
+                {
+                    BucketName = awsBucketName,
+                    Key = replayFileName,
+                };
+        
+                try
+                {
+                    var getResponse = await s3.GetObjectAsync(getRequest);
+        
+                    if (getResponse.HttpStatusCode == HttpStatusCode.OK)
+                    {
+                        // already exists on s3, fuck off
+                        return;
+                    }
+                }
+                catch (AmazonS3Exception)
+                {
+                    // doesn't exist, ignore
+                }
+        
+                using var fileStream = new MemoryStream();
+                await ftp.DownloadStream(fileStream, replayFileName);
+                
+                var putRequest = new PutObjectRequest
+                {
+                    BucketName = awsBucketName,
+                    Key = replayFileName,
+                    InputStream = fileStream,
+                };
+        
+                try
+                {
+                    var putResponse = await s3.PutObjectAsync(putRequest);
+                    if (putResponse?.HttpStatusCode != HttpStatusCode.OK)
+                    {
+                        throw new Exception($"Failed to save replay x, status code: {putResponse?.HttpStatusCode}");
+                    }
+                    
+                    Console.WriteLine($"Saved replay {replayFileName}");
+                }
+                catch (Exception)
+                {
+                    Console.WriteLine($"Failed to save replay: {replayFileName}");
+                    throw;
+                }
+            }
+    
+            if (scoreIds.Length < fetchConstant)
+            {
+                break;
+            }
         }
-        catch (Exception)
-        {
-            Console.WriteLine($"Failed to save replay: {x}");
-            throw;
-        }
-    });
+    }
 }
 
 async Task Cleanup()
